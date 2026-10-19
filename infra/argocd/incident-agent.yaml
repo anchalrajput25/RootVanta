@@ -1,0 +1,30 @@
+# Argo CD Application that deploys Rootvanta from this repository's Helm chart.
+# Change repoURL, the image names and publicUrl, then: kubectl apply -n argocd -f incident-agent.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: incident-agent
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/incident-agent.git
+    targetRevision: main
+    path: infra/helm/incident-agent
+    helm:
+      valuesObject:
+        publicUrl: https://incident-agent.example.com
+        ingress:
+          enabled: true
+          host: incident-agent.example.com
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: incident-agent
+  syncPolicy:
+    # Rootvanta itself is fine to auto-sync. The apps it rolls back must not be:
+    # Argo CD refuses a rollback while auto-sync is on.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

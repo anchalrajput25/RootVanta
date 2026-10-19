@@ -1,0 +1,21 @@
+Rootvanta is starting.
+
+{{- if .Values.ingress.enabled }}
+Open {{ .Values.publicUrl }} and create your company.
+{{- else }}
+No ingress. Try it with:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ia.fullname" . }}-web 3001:3001
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ia.fullname" . }}-api 8000:8000
+{{- end }}
+
+Company sign-in: register {{ .Values.publicUrl }}/api/v1/auth/sso/callback at your provider,
+then fill in Settings > Sign-in.
+{{- if .Values.scaling.namespaces }}
+
+Scaling is allowed in: {{ join ", " .Values.scaling.namespaces }}. In Settings > Monitoring > Kubernetes,
+use the address https://kubernetes.default.svc and leave the token empty.
+{{- end }}
+{{- if not .Values.secrets.existingSecret }}
+
+Back up the secret {{ include "ia.secretName" . }}: its secret-key decrypts the monitoring tokens companies save.
+{{- end }}

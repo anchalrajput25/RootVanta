@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+*.db
+demo/.last_action.json
+demo/alertmanager/token
+.incident_agent.key
+
+# benchmark downloads and results
+/data/
+/results/

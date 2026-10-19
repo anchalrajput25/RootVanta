@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ia.fullname" . }}-web
+  labels: {{- include "ia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels: {{- include "ia.selector" (dict "root" . "component" "web") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ia.selector" (dict "root" . "component" "web") | nindent 8 }}
+    spec:
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      automountServiceAccountToken: false
+      {{- include "ia.podExtras" . | nindent 6 }}
+      containers:
+        - name: web
+          image: {{ .Values.image.web }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - {name: http, containerPort: 3001}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 5
+          resources: {{- toYaml .Values.web.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - {name: cache, mountPath: /app/.next/cache}
+      volumes:
+        - {name: cache, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ia.fullname" . }}-web
+  labels: {{- include "ia.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "ia.selector" (dict "root" . "component" "web") | nindent 4 }}
+  ports:
+    - {name: http, port: 3001, targetPort: http}

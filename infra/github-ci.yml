@@ -1,0 +1,64 @@
+# Runs on every push and pull request: all tests on SQLite and PostgreSQL,
+# the dashboard's type check and build, and a build of the Docker images.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 3s --health-retries 20
+    env:
+      # Row-level security only works for a role that is not a superuser.
+      TEST_DATABASE_URL: postgresql+psycopg://incident_app:incident_app@localhost:5432/incident_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Create the app's database role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c "CREATE ROLE incident_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD 'incident_app'"
+          psql -h localhost -U postgres -c "CREATE DATABASE incident_test OWNER incident_app ENCODING 'UTF8' TEMPLATE template0"
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t incident-agent .
+      - run: docker build -t incident-agent-web web

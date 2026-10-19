@@ -1,0 +1,30 @@
+{{- if .Values.ingress.enabled }}
+# One address for people: /api/v1 goes to the API, everything else to the dashboard.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ia.fullname" . }}
+  labels: {{- include "ia.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - {{- with .Values.ingress.host }}
+      host: {{ . | quote }}
+      {{- end }}
+      http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend: {service: {name: {{ include "ia.fullname" . }}-api, port: {name: http}}}
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: {{ include "ia.fullname" . }}-web, port: {name: http}}}
+{{- end }}

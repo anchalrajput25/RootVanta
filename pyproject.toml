@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "incident-agent"
+version = "0.1.0"
+description = "AI incident investigation and remediation agent with evidence-based recovery verification"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.6,<3",
+    "pyyaml>=6.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "sqlalchemy>=2.0",
+    "pyjwt>=2.8",
+    "httpx>=0.27",
+    "langgraph>=0.2",
+    "cryptography>=42",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+ai = ["anthropic>=1.0"]
+# Only for the RCAEval benchmark (python -m incident_agent.evals.rcaeval)
+bench = ["pandas>=2.0", "numpy>=1.24", "pyarrow>=14", "huggingface_hub>=0.23"]
+dev = ["pytest>=8", "psycopg[binary]>=3.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+addopts = "-ra --strict-markers"
+markers = ["postgres: needs TEST_DATABASE_URL pointing at PostgreSQL"]
+# Library notice from FastAPI's test client, not from this project.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]

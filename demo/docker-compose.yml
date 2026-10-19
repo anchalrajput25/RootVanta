@@ -1,0 +1,73 @@
+# Practice environment: a small shop plus the monitoring stack.
+#   docker compose up --build -d          (run from this demo/ folder)
+#   Grafana:    http://localhost:3000      (dashboard "Shop overview")
+#   Prometheus: http://localhost:9090
+#   Jaeger:     http://localhost:16686
+#   Alertmanager: http://localhost:9093  (sends alerts to the Rootvanta API)
+#   Break things with:  python inject.py --help
+x-shop: &shop
+  build: ./shop
+  environment: &shop-env
+    ADMIN_TOKEN: demo-admin-token
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    PAYMENTS_URL: http://payments:8000
+  restart: unless-stopped
+
+services:
+  checkout:
+    <<: *shop
+    environment: {<<: *shop-env, SERVICE_ROLE: checkout}
+    ports: ["8101:8000"]
+  payments:
+    <<: *shop
+    environment: {<<: *shop-env, SERVICE_ROLE: payments}
+    ports: ["8102:8000"]
+  search:
+    <<: *shop
+    environment: {<<: *shop-env, SERVICE_ROLE: search}
+    ports: ["8103:8000"]
+  loadgen:
+    <<: *shop
+    command: ["python", "loadgen.py"]
+    environment: {RPS: "10"}
+    depends_on: [checkout, search]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+    ports: ["9090:9090"]
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]  # reach the API on your computer
+    ports: ["9093:9093"]
+  loki:
+    image: grafana/loki:3.5.3
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+    ports: ["3100:3100"]
+  alloy:
+    image: grafana/alloy:v1.10.0
+    command: ["run", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+  jaeger:
+    image: jaegertracing/jaeger:2.9.0
+    ports: ["16686:16686"]
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus, loki, jaeger]

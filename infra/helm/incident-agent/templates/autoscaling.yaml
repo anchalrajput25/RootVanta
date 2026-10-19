@@ -1,0 +1,30 @@
+{{- range $c := list "api" "worker" }}
+{{- $v := index $.Values $c }}
+{{- if $v.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "ia.fullname" $ }}-{{ $c }}
+  labels: {{- include "ia.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ include "ia.fullname" $ }}-{{ $c }}}
+  minReplicas: {{ $v.autoscaling.minReplicas }}
+  maxReplicas: {{ $v.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: {{ $v.autoscaling.targetCPU }}}}
+{{- end }}
+{{- end }}
+{{- range $c := list "api" "web" }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ia.fullname" $ }}-{{ $c }}
+  labels: {{- include "ia.labels" $ | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {{- include "ia.selector" (dict "root" $ "component" $c) | nindent 6 }}
+{{- end }}

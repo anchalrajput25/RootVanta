@@ -1,0 +1,16 @@
+# Sends firing alerts to the Rootvanta API running on your computer.
+# The token file is written by:  python -m incident_agent.workflow.demo setup
+route:
+  receiver: incident-agent
+  group_by: [alertname, service]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 1h
+receivers:
+  - name: incident-agent
+    webhook_configs:
+      - url: http://host.docker.internal:8000/api/v1/alerts/alertmanager
+        send_resolved: true
+        http_config:
+          authorization:
+            credentials_file: /etc/alertmanager/token

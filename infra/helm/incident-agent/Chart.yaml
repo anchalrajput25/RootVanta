@@ -1,0 +1,7 @@
+apiVersion: v2
+name: incident-agent
+description: AI on-call assistant that finds the cause of an incident, proposes a safe fix, and proves it worked.
+type: application
+version: 0.9.0
+appVersion: "0.9.0"
+keywords: [incident, sre, on-call, argocd, prometheus]

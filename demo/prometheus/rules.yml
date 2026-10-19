@@ -1,0 +1,31 @@
+# The signals the incident agent reads. Names match evals/scenarios/*.yaml.
+groups:
+  - name: incident-signals
+    rules:
+      - record: service:http_5xx_rate
+        expr: |
+          (
+            sum by (service) (rate(http_requests_total{code=~"5.."}[1m]))
+            or 0 * sum by (service) (rate(http_requests_total[1m]))
+          )
+            /
+          sum by (service) (rate(http_requests_total[1m]))
+      - record: service:p95_latency_ms
+        expr: 1000 * histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[1m])))
+      - record: service:orders_per_minute
+        expr: 60 * sum by (service) (rate(orders_total[1m]))
+      - record: service:cpu_utilization
+        expr: max by (service) (app_cpu_utilization)
+
+  - name: incident-alerts
+    rules:
+      - alert: HighErrorRate
+        expr: service:http_5xx_rate > 0.05
+        for: 30s
+        labels: {severity: sev2}
+        annotations: {summary: "{{ $labels.service }} 5xx rate is {{ $value | humanizePercentage }}"}
+      - alert: HighLatency
+        expr: service:p95_latency_ms > 500
+        for: 30s
+        labels: {severity: sev3}
+        annotations: {summary: "{{ $labels.service }} p95 latency is {{ $value | humanize }} ms"}

@@ -1,0 +1,80 @@
+{{- if .Values.postgres.enabled }}
+# One PostgreSQL pod for trying the agent out. Use a managed database in production.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ia.fullname" . }}-postgres-init
+  labels: {{- include "ia.labels" . | nindent 4 }}
+data:
+  init.sh: |
+    #!/bin/sh
+    # The app connects as incident_app, which is NOT a superuser: superusers bypass
+    # row-level security, so the app must never use one.
+    set -eu
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" -v pw="$APP_DB_PASSWORD" <<'SQL'
+    CREATE ROLE incident_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD :'pw';
+    CREATE DATABASE incident_agent OWNER incident_app ENCODING 'UTF8' TEMPLATE template0;
+    SQL
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ia.fullname" . }}-postgres
+  labels: {{- include "ia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: {{ include "ia.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels: {{- include "ia.selector" (dict "root" . "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ia.selector" (dict "root" . "component" "postgres") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {fsGroup: 999, runAsUser: 999, runAsNonRoot: true}
+      {{- include "ia.podExtras" . | nindent 6 }}
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          env:
+            - {name: POSTGRES_USER, value: postgres}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "ia.secretName" . }}, key: postgres-password}}
+            - name: APP_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "ia.secretName" . }}, key: app-db-password}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports:
+            - {name: postgres, containerPort: 5432}
+          readinessProbe:
+            exec: {command: [pg_isready, -U, postgres]}
+            periodSeconds: 5
+          resources: {{- toYaml .Values.postgres.resources | nindent 12 }}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+            - {name: run, mountPath: /var/run/postgresql}
+      volumes:
+        - name: init
+          configMap: {name: {{ include "ia.fullname" . }}-postgres-init, defaultMode: 0555}
+        - {name: run, emptyDir: {}}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.postgres.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources: {requests: {storage: {{ .Values.postgres.storage }}}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ia.fullname" . }}-postgres
+  labels: {{- include "ia.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "ia.selector" (dict "root" . "component" "postgres") | nindent 4 }}
+  ports:
+    - {name: postgres, port: 5432, targetPort: postgres}
+{{- end }}

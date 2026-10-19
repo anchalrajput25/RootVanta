@@ -1,0 +1,88 @@
+# Rootvanta on Kubernetes.
+#
+#   helm install incident-agent ./infra/helm/incident-agent -n incident-agent --create-namespace \
+#     --set publicUrl=https://incidents.example.com --set ingress.host=incidents.example.com
+#
+# Build and push the two images first (see README, "Kubernetes"), then set image.api and image.web.
+
+# Where people open the dashboard. Used for company sign-in redirects and links in chat messages.
+publicUrl: http://localhost:3001
+
+image:
+  api: ghcr.io/your-org/incident-agent-api:0.9.0   # built from ./Dockerfile; the API and the workers
+  web: ghcr.io/your-org/incident-agent-web:0.9.0   # built from ./web/Dockerfile
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Secrets. Leave empty to generate random ones on first install (they are kept on upgrades).
+# Or point existingSecret at a Secret you manage, with the keys listed in templates/secret.yaml.
+secrets:
+  existingSecret: ""
+  jwtSecret: ""
+  secretKey: ""        # encrypts saved monitoring tokens: back it up
+  anthropicApiKey: ""  # only if ai.enabled
+
+# The database. For production use a managed PostgreSQL (16+) and set externalDatabase.url.
+# The app must connect as a role that is NOT a superuser, or row-level security is bypassed.
+externalDatabase:
+  url: ""  # postgresql+psycopg://incident_app:PASSWORD@host:5432/incident_agent
+# For trying it out: one PostgreSQL pod with a volume, set up the same way as docker-compose.
+postgres:
+  enabled: true
+  image: postgres:16
+  storage: 10Gi
+  storageClass: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+
+api:
+  replicas: 2
+  processes: 2  # uvicorn worker processes per pod
+  resources:
+    requests: {cpu: 250m, memory: 256Mi}
+    limits: {memory: 1Gi}
+  autoscaling: {enabled: false, minReplicas: 2, maxReplicas: 10, targetCPU: 70}
+
+worker:
+  replicas: 2  # more workers = more incidents handled at once
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+  autoscaling: {enabled: false, minReplicas: 2, maxReplicas: 10, targetCPU: 70}
+
+web:
+  replicas: 2
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+
+ingress:
+  enabled: true
+  className: ""   # e.g. nginx
+  host: ""        # e.g. incidents.example.com
+  annotations: {}
+  tls: []         # - secretName: incidents-tls
+
+# Several companies on one server: refuse private network addresses in Settings.
+blockPrivateUrls: false
+
+ai:
+  enabled: false  # let Claude rank causes too (needs secrets.anthropicApiKey)
+
+# Let the agent change replica counts in these namespaces through the Kubernetes API
+# (Settings > Monitoring > Kubernetes, address https://kubernetes.default.svc, no token).
+# It gets get/patch on deployments/scale only, nothing else.
+scaling:
+  namespaces: []  # e.g. [shop, payments]
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile: {type: RuntimeDefault}
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

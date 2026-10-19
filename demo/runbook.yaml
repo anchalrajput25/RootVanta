@@ -1,0 +1,14 @@
+# What the team knows about each service: safe fallbacks and limits.
+# The investigator only proposes fixes that are written down here or are
+# standard (rollback to the previous version, add replicas).
+services:
+  checkout:
+    max_replicas: 20
+    fallbacks:
+      payments:
+        flag: use_backup_payment_provider
+        description: Switch checkout to the backup payment provider
+  payments:
+    max_replicas: 20
+  search:
+    max_replicas: 20

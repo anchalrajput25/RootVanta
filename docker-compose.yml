@@ -1,0 +1,78 @@
+# The whole product: PostgreSQL, the API, background workers and the web dashboard.
+#
+#   ./install.sh        (Windows: install.ps1)  creates .env with new secrets, then runs:
+#   docker compose up -d --build
+#
+# Then open http://localhost:3001 and create your company.
+# Each company connects its own monitoring in Settings, so nothing here points at
+# a particular Prometheus. API docs: http://localhost:8000/docs
+x-app-env: &app-env
+  INCIDENT_AGENT_DATABASE_URL: postgresql+psycopg://incident_app:${APP_DB_PASSWORD:?run install.sh first}@postgres:5432/incident_agent
+  INCIDENT_AGENT_JWT_SECRET: ${INCIDENT_AGENT_JWT_SECRET:?run install.sh first}
+  INCIDENT_AGENT_SECRET_KEY: ${INCIDENT_AGENT_SECRET_KEY:?run install.sh first}
+  INCIDENT_AGENT_BLOCK_PRIVATE_URLS: ${INCIDENT_AGENT_BLOCK_PRIVATE_URLS:-0}
+  INCIDENT_AGENT_USE_AI: ${INCIDENT_AGENT_USE_AI:-0}
+  INCIDENT_AGENT_PUBLIC_URL: ${INCIDENT_AGENT_PUBLIC_URL:-http://localhost:3001}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run install.sh first}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?run install.sh first}
+    ports:
+      - "127.0.0.1:5432:5432"  # only this computer; the app reaches it inside Docker
+    volumes:
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d incident_agent"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: .
+    restart: unless-stopped
+    environment: *app-env
+    extra_hosts: ["host.docker.internal:host-gateway"]  # lets a company point at monitoring on this computer
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 5s
+      retries: 20
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "incident_agent.workflow"]
+    environment:
+      <<: *app-env
+      INCIDENT_AGENT_RUNBOOK: /app/demo/runbook.yaml
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    deploy:
+      replicas: ${WORKERS:-2}  # more workers = more incidents handled at once
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      args:
+        INCIDENT_AGENT_API_URL: http://api:8000
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
